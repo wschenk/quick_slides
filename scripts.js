@@ -46,7 +46,6 @@ import {deflateToBase64, inflateFromBase64} from './compress.js'
         }
         
         getState() {
-            console.log( "Saving state" );
             const state = []
             for( let child of this.children ) {
                 const slide = child.querySelector( "content-slide" );
@@ -61,7 +60,6 @@ import {deflateToBase64, inflateFromBase64} from './compress.js'
 
         newSection() {
             this.innerHTML += `<section>${this.template}</section>`;
-            console.log( this.innerHTML );
             this.connectedCallback();
         }
 
@@ -81,23 +79,42 @@ import {deflateToBase64, inflateFromBase64} from './compress.js'
                 first = false;
             }
         }
+
+        prevSlide() {
+            let last = undefined
+            for( let section of this.querySelectorAll("section" ) ) {
+                let top = section.getBoundingClientRect().top
+
+                if( top >= 0 && last) {
+                    last.scrollIntoView();
+                    return;
+                    }
+                last = section;
+            }
+        }
+
     }
 
     customElements.define("slides-holder", SlidesHolder);
 
 document.addEventListener('keydown', function(event) {
+    const body = document.querySelector( "body" );
     const slides = document.querySelector( "slides-holder ");
-    if (event.metaKey && event.key === 'j') {
-        console.log( "new section" );
 
-        slides.newSection();
-    }
-    if (event.metaKey && event.key === 'k') {
-        console.log( "next spide" );
+    if( event.target == body ) {
+        if( event.key === 'ArrowRight' ) {
+            slides.nextSlide();
+        }
+        
+        if( event.key == 'ArrowLeft' ) {
+            slides.prevSlide();
+        }
 
-        slides.nextSlide();
+        if( event.key == 'n' ) {
+            slides.newSection();
+        }
     }
-})
+});
 
 class ContentSlide extends HTMLElement {
     constructor() {
@@ -105,10 +122,9 @@ class ContentSlide extends HTMLElement {
     }
 
     connectedCallback() {
-        console.log( "Content Slide connected-callback" );
         for( let child of this.children ) {
             child.setAttribute( "contenteditable", true);
-            child.addEventListener( "click", (e) => {console.log( "click", e.target );} )
+            // child.addEventListener( "click", (e) => {console.log( "click", e.target );} )
             child.addEventListener( "input", (e) => {
                 document.querySelector("slides-holder").getState();
             } );
