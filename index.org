@@ -1,0 +1,288 @@
+#+title: Make presentations with html
+#+date: 2024-09-12T08:49:15
+#+remote:   https://github.com/wschenk/quick_slides
+#+draft: true
+
+#+begin_src javascript :tangle compress.js
+  import pako from 'https://cdn.jsdelivr.net/npm/pako@2.1.0/+esm'
+
+  export function deflateToBase64( inputData ) {
+      const compressed = pako.deflate( inputData );
+      const base64 = window.btoa( String.fromCharCode.apply(null, compressed ));
+      
+      return base64;
+  }
+
+  export function inflateFromBase64( base64 ) {
+      const reverseBase64 = atob(base64);
+
+      const reverseBase64Array = new Uint8Array(reverseBase64.split("").map(function(c) {
+          return c.charCodeAt(0); }));
+
+      const inflatedRaw = pako.inflate( reverseBase64Array );
+      const decompressed = String.fromCharCode.apply( null, inflatedRaw );
+
+      return decompressed;
+  }
+#+end_src
+
+
+#+begin_src javascript :tangle scripts.js
+      import {deflateToBase64, inflateFromBase64} from './compress.js'
+
+      class SlidesHolder extends HTMLElement {
+          constructor() {
+              super();
+              // Treat the whole thing as a template
+              
+              this.template = `${this.innerHTML}`;
+              
+              const header = `<header>
+    <button id="saveState">Save State</button>
+    <button id="newSlide">New Slide</button>
+    <button id="nextSlide">Next Slide</button>
+
+  </header>`;
+
+              // default
+              let sections = [`<section>${this.template}</section>`];
+
+              // load from cache if exists
+              const hash = window.location.hash;
+              if( hash != '' ) {
+                  sections = [];
+                  
+                  const state = JSON.parse(inflateFromBase64( hash.substring( 1 ) ))
+                  for( let section of state ) {
+                      let frag = `<section><content-slide>`
+
+                      for( let elem of section ) {
+                          frag += `<${elem.nodeName}>${elem.text}</${elem.nodeName}>`
+                      }
+                      
+                      frag += "</content-slide></section>"
+
+                      sections.push( frag );
+                  }
+              }
+                      
+              this.innerHTML = `${header}${sections.join( "\n")}`
+          }
+          
+          connectedCallback() {
+              this.querySelector( "#nextSlide" ).addEventListener( "click", () => this.nextSlide() );
+              this.querySelector( "#newSlide" ).addEventListener( "click", () => this.newSection() );
+              this.querySelector( "#saveState" ).addEventListener( "click", () => this.getState() );
+          }
+          
+          getState() {
+              console.log( "Saving state" );
+              const state = []
+              for( let child of this.children ) {
+                  const slide = child.querySelector( "content-slide" );
+                  if( slide ) {
+                      state.push(slide.getState())
+                  }
+              }
+
+              const json = JSON.stringify(state);
+              window.location.hash = deflateToBase64( json );
+          }
+
+          newSection() {
+              this.innerHTML += `<section>${this.template}</section>`;
+              console.log( this.innerHTML );
+              this.connectedCallback();
+          }
+
+          nextSlide() {
+              let first = true;
+              let lastneg = false
+              for( let section of this.querySelectorAll("section" ) ) {
+                  let top = section.getBoundingClientRect().top
+                  if( top > 0 && lastneg ) {
+                      section.scrollIntoView()
+                      return;
+                  }
+                  lastneg = top <= 0
+                  if( first && top > 0 ) {
+                      lastneg = true;
+                      }
+                  first = false;
+              }
+          }
+      }
+
+      customElements.define("slides-holder", SlidesHolder);
+
+#+end_src
+
+#+begin_src javascript :tangle scripts.js
+  document.addEventListener('keydown', function(event) {
+      const slides = document.querySelector( "slides-holder ");
+      if (event.metaKey && event.key === 'j') {
+          console.log( "new section" );
+
+          slides.newSection();
+      }
+      if (event.metaKey && event.key === 'k') {
+          console.log( "next spide" );
+
+          slides.nextSlide();
+      }
+  })
+#+end_src
+
+
+
+#+begin_src javascript :tangle scripts.js
+  class ContentSlide extends HTMLElement {
+      constructor() {
+          super();
+      }
+
+      connectedCallback() {
+          console.log( "Content Slide connected-callback" );
+          for( let child of this.children ) {
+              child.setAttribute( "contenteditable", true);
+              child.addEventListener( "click", (e) => {console.log( "click", e.target );} )
+              child.addEventListener( "input", (e) => {
+                  document.querySelector("slides-holder").getState();
+              } );
+          }
+      }
+
+      getState() {
+          let state = [];
+          for( let child of this.children ) {
+              state.push( {nodeName: child.nodeName, text: child.innerText})
+          }
+
+          return state;
+      }
+  }
+
+  customElements.define("content-slide", ContentSlide);
+#+end_src
+
+
+
+#+begin_src css :tangle styles.css
+  :root {
+      --main-font-family: "Fraunces", system-ui;
+      --background: #fafaf9;
+      --text-color: #451a03;
+      --header-color: #032e45;
+      --diminished-text-color: #78716c;
+  }
+
+  body {
+      font-family: var( --main-font-family );
+      color: var( --text-color );
+      background: var( --background );
+      margin: 0;
+  }
+
+  header {
+      opacity: 0;
+      transition: all 1s ease-out;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      max-width: 600px;
+      margin: 0 auto;
+      height: 50px;
+      width: 100%;
+      display: flex;
+      justify-content: space-around;
+
+      &:hover {
+          opacity: 1;
+      }
+  }
+
+  section {
+      height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+  }
+
+  main {
+      max-width: 1200px;
+      height: 630px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 600px;
+      padding-left: 100px;
+      padding-right: 100px;
+  }
+
+  h1 {
+      font-size: 80px;
+      font-size: clamp( 40px, 7vw, 80px );
+      color: var( --header-color );
+      margin: 0;
+  }
+
+  h2 {
+      font-size: 60px;
+      font-size: clamp( 40px, 5vw, 60px );
+      color: var( --diminished-text-color );
+      margin: 0;
+  }
+
+  h3 {
+      font-size: 40px;
+      font-size: clamp( 20px, 4vw, 40px );
+       color: var( --diminished-header-color );
+       text-transform: uppercase;
+       margin:0;
+  }
+
+  p {
+      font-size: clamp( 16px, 3vw, 36px );
+      }
+
+
+
+
+#+end_src
+#+begin_src html :tangle index.html
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Sample Project</title>
+      <style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&display=swap');
+
+      </style>
+      <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+      <slides-holder>
+        <content-slide>
+          <h3>SECTION</h3>
+          
+          <h1>TITLE</h1>
+          <h2>SUBTITLE</h2>
+          
+          <p>This is text</p>
+        </content-slide>
+      </slides-holder>
+
+      <script src="scripts.js" type="module"></script>
+    </body>
+  </html>
+
+#+end_src
+* References
+
+
+# Local Variables:
+# eval: (add-hook 'after-save-hook (lambda ()(org-babel-tangle)) nil t)
+# End:
